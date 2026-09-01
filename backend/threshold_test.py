@@ -18,24 +18,35 @@ features = [
 
 X = data[features]
 
-probabilities = model.predict_proba(X)[:, 1]
-expected_value = probabilities * data["cart_amount"]
+natural_probability = model.predict_proba(X)[:, 1]
+
+expected_uplift = (
+    data["intervention_probability"] - natural_probability
+)
+
+expected_incremental_revenue = (
+    expected_uplift * data["cart_amount"]
+)
 
 print("\n===== THRESHOLD EXPERIMENT =====")
 
-for threshold in [1000, 2000, 3000, 4000, 5000]:
+for threshold in [500, 1000, 2000, 3000, 4000, 5000]:
 
-    mask = expected_value >= threshold
-
-    recovered_revenue = data.loc[
-        mask & (data["intervention_recovered"] == 1),
-        "cart_amount"
-    ].sum()
+    mask = expected_incremental_revenue >= threshold
 
     interventions = mask.sum()
 
+    expected_revenue = expected_incremental_revenue[mask].sum()
+
+    simulated_incremental_revenue = (
+        data.loc[mask, "intervention_recovered"] * data.loc[mask, "cart_amount"]
+    ).sum() - (
+        data.loc[mask, "natural_recovered"] * data.loc[mask, "cart_amount"]
+    ).sum()
+
     print(
         f"₹{threshold}: "
-        f"₹{recovered_revenue:,.0f} recovered | "
-        f"{interventions} interventions"
+        f"{interventions} interventions | "
+        f"Expected incremental: ₹{expected_revenue:,.0f} | "
+        f"Simulated incremental: ₹{simulated_incremental_revenue:,.0f}"
     )
