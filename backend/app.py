@@ -29,6 +29,11 @@ MODEL_FILE = os.path.join(
     "recovery_model.pkl"
 )
 
+TREATMENT_MODEL_FILE = os.path.join(
+    BASE_DIR,
+    "treatment_model.pkl"
+)
+
 
 # --------------------------------------------------
 # APP
@@ -36,7 +41,15 @@ MODEL_FILE = os.path.join(
 
 app = Flask(__name__)
 
-model = joblib.load(MODEL_FILE)
+# Natural recovery model
+model = joblib.load(
+    MODEL_FILE
+)
+
+# Intervention recovery model
+treatment_model = joblib.load(
+    TREATMENT_MODEL_FILE
+)
 
 
 # --------------------------------------------------
@@ -45,6 +58,7 @@ model = joblib.load(MODEL_FILE)
 
 @app.route("/")
 def home():
+
     return send_from_directory(
         FRONTEND_DIR,
         "index.html"
@@ -53,6 +67,7 @@ def home():
 
 @app.route("/<path:filename>")
 def frontend_files(filename):
+
     return send_from_directory(
         FRONTEND_DIR,
         filename
@@ -80,26 +95,88 @@ def predict():
         data["minutes_since_abandonment"]
     ]]
 
+    # --------------------------------------------------
+    # NATURAL RECOVERY PROBABILITY
+    # --------------------------------------------------
+
     natural_probability = model.predict_proba(
         features
     )[0][1]
 
-    if natural_probability >= 0.70:
-        action = "SEND_PERSONALIZED_REMINDER"
 
-    elif natural_probability >= 0.40:
-        action = "SEND_STANDARD_REMINDER"
+    # --------------------------------------------------
+    # INTERVENTION RECOVERY PROBABILITY
+    # --------------------------------------------------
+
+    intervention_probability = (
+        treatment_model.predict_proba(
+            features
+        )[0][1]
+    )
+
+
+    # --------------------------------------------------
+    # ESTIMATED UPLIFT
+    # --------------------------------------------------
+
+    expected_uplift = (
+        intervention_probability
+        - natural_probability
+    )
+
+
+    # --------------------------------------------------
+    # EXPECTED INCREMENTAL REVENUE
+    # --------------------------------------------------
+
+    expected_incremental_revenue = (
+        expected_uplift
+        * float(data["cart_amount"])
+    )
+
+
+    # --------------------------------------------------
+    # RECOVERAI DECISION POLICY
+    # --------------------------------------------------
+
+    if expected_incremental_revenue >= 500:
+
+        if natural_probability >= 0.70:
+
+            action = (
+                "SEND_PERSONALIZED_REMINDER"
+            )
+
+        else:
+
+            action = (
+                "SEND_STANDARD_REMINDER"
+            )
 
     else:
-        action = "DO_NOT_INTERVENE"
+
+        action = (
+            "DO_NOT_INTERVENE"
+        )
+
+
+    # --------------------------------------------------
+    # SIMULATED RECOVERY
+    # --------------------------------------------------
 
     recovered_amount = simulate_recovery(
         data["cart_amount"],
-        natural_probability,
+        intervention_probability,
         action
     )
 
+
+    # --------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------
+
     return jsonify({
+
         "customer_id": data.get(
             "customer_id",
             "UNKNOWN"
@@ -111,6 +188,21 @@ def predict():
 
         "recovery_probability": round(
             float(natural_probability),
+            2
+        ),
+
+        "intervention_probability": round(
+            float(intervention_probability),
+            2
+        ),
+
+        "expected_uplift": round(
+            float(expected_uplift),
+            4
+        ),
+
+        "expected_incremental_revenue": round(
+            float(expected_incremental_revenue),
             2
         ),
 
@@ -128,7 +220,14 @@ def predict():
 def customers():
 
     # Load dataset
-    data = pd.read_csv(DATA_FILE)
+    data = pd.read_csv(
+        DATA_FILE
+    )
+
+
+    # --------------------------------------------------
+    # FEATURE COLUMNS
+    # --------------------------------------------------
 
     feature_columns = [
         "cart_amount",
@@ -143,26 +242,31 @@ def customers():
     ]
 
 
+    X = data[
+        feature_columns
+    ]
+
+
     # --------------------------------------------------
     # NATURAL RECOVERY PROBABILITY
     # --------------------------------------------------
 
-    natural_probability = model.predict_proba(
-        data[feature_columns]
-    )[:, 1]
-
-
-    # --------------------------------------------------
-    # INTERVENTION PROBABILITY
-    # --------------------------------------------------
-
-    intervention_probability = (
-        data["intervention_probability"].values
+    natural_probability = (
+        model.predict_proba(X)[:, 1]
     )
 
 
     # --------------------------------------------------
-    # EXPECTED UPLIFT
+    # INTERVENTION RECOVERY PROBABILITY
+    # --------------------------------------------------
+
+    intervention_probability = (
+        treatment_model.predict_proba(X)[:, 1]
+    )
+
+
+    # --------------------------------------------------
+    # ESTIMATED UPLIFT
     # --------------------------------------------------
 
     expected_uplift = (
@@ -194,6 +298,10 @@ def customers():
             natural_probability[i]
         )
 
+        intervention_prob = float(
+            intervention_probability[i]
+        )
+
         uplift = float(
             expected_uplift[i]
         )
@@ -205,15 +313,10 @@ def customers():
 
         # --------------------------------------------------
         # RECOVERAI TARGETING RULE
-        #
-        # Intervene only when the expected
-        # incremental revenue is at least ₹500.
         # --------------------------------------------------
 
         if incremental_revenue >= 500:
 
-            # High natural recovery probability
-            # gets personalized treatment.
             if natural_prob >= 0.70:
 
                 action = (
@@ -233,9 +336,15 @@ def customers():
             )
 
 
+        # --------------------------------------------------
+        # CUSTOMER RESULT
+        # --------------------------------------------------
+
         results.append({
 
-            "customer_id": row["customer_id"],
+            "customer_id": row[
+                "customer_id"
+            ],
 
             "cart_amount": float(
                 row["cart_amount"]
@@ -246,22 +355,31 @@ def customers():
                 2
             ),
 
+            "intervention_probability": round(
+                intervention_prob,
+                2
+            ),
+
             "expected_uplift": round(
                 uplift,
                 4
             ),
 
             "expected_value": round(
-                max(incremental_revenue, 0),
+                max(
+                    incremental_revenue,
+                    0
+                ),
                 2
             ),
 
             "recommended_action": action
-
         })
 
 
-    return jsonify(results)
+    return jsonify(
+        results
+    )
 
 
 # --------------------------------------------------
