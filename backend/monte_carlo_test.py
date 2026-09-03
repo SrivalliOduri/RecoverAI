@@ -2,15 +2,15 @@ import pandas as pd
 import joblib
 import numpy as np
 
-from recovery import simulate_recovery
-
 
 # --------------------------------------------------
-# LOAD DATA + MODEL
+# LOAD DATA + MODELS
 # --------------------------------------------------
 
 data = pd.read_csv("../data/checkout_data.csv")
-model = joblib.load("recovery_model.pkl")
+
+natural_model = joblib.load("recovery_model.pkl")
+treatment_model = joblib.load("treatment_model.pkl")
 
 
 # --------------------------------------------------
@@ -29,27 +29,36 @@ features = [
     "minutes_since_abandonment"
 ]
 
+X = data[features]
+
 
 # --------------------------------------------------
-# CALCULATE ACTIONS ONCE
+# PREDICT POTENTIAL OUTCOMES
 # --------------------------------------------------
 
-probabilities = model.predict_proba(
-    data[features]
-)[:, 1]
+natural_probability = natural_model.predict_proba(X)[:, 1]
 
-actions = []
+intervention_probability = treatment_model.predict_proba(X)[:, 1]
 
-for probability in probabilities:
 
-    if probability >= 0.70:
-        actions.append("SEND_PERSONALIZED_REMINDER")
+# --------------------------------------------------
+# ESTIMATE UPLIFT + INCREMENTAL VALUE
+# --------------------------------------------------
 
-    elif probability >= 0.40:
-        actions.append("SEND_STANDARD_REMINDER")
+estimated_uplift = (
+    intervention_probability - natural_probability
+)
 
-    else:
-        actions.append("DO_NOT_INTERVENE")
+expected_incremental_revenue = (
+    estimated_uplift * data["cart_amount"].values
+)
+
+
+# --------------------------------------------------
+# TARGET CUSTOMERS
+# --------------------------------------------------
+
+target = expected_incremental_revenue >= 500
 
 
 # --------------------------------------------------
@@ -58,30 +67,48 @@ for probability in probabilities:
 
 SIMULATIONS = 500
 
-recovered_revenues = []
+incremental_revenues = []
 
 for _ in range(SIMULATIONS):
 
-    total_recovered = 0
+    # Simulate whether each targeted customer
+    # would recover naturally
+    natural_outcomes = np.random.binomial(
+        1,
+        natural_probability[target]
+    )
 
-    for i, row in data.iterrows():
+    # Simulate whether each targeted customer
+    # would recover after intervention
+    intervention_outcomes = np.random.binomial(
+        1,
+        intervention_probability[target]
+    )
 
-        recovered = simulate_recovery(
-            row["cart_amount"],
-            probabilities[i],
-            actions[i]
-        )
+    natural_revenue = (
+        natural_outcomes
+        * data.loc[target, "cart_amount"].values
+    ).sum()
 
-        total_recovered += recovered
+    intervention_revenue = (
+        intervention_outcomes
+        * data.loc[target, "cart_amount"].values
+    ).sum()
 
-    recovered_revenues.append(total_recovered)
+    incremental_revenue = (
+        intervention_revenue - natural_revenue
+    )
+
+    incremental_revenues.append(
+        incremental_revenue
+    )
 
 
 # --------------------------------------------------
 # RESULTS
 # --------------------------------------------------
 
-revenues = np.array(recovered_revenues)
+revenues = np.array(incremental_revenues)
 
 mean_revenue = revenues.mean()
 std_revenue = revenues.std()
@@ -90,12 +117,23 @@ lower = np.percentile(revenues, 2.5)
 upper = np.percentile(revenues, 97.5)
 
 
-print("\n===== MONTE CARLO RECOVERY SIMULATION =====")
-
-print(f"Simulations: {SIMULATIONS}")
+print("\n===== MONTE CARLO UPLIFT SIMULATION =====")
 
 print(
-    f"Average simulated recovered revenue: "
+    f"Simulations: {SIMULATIONS}"
+)
+
+print(
+    f"Customers targeted: {target.sum()}"
+)
+
+print(
+    f"Expected incremental revenue: "
+    f"₹{expected_incremental_revenue[target].sum():,.2f}"
+)
+
+print(
+    f"Average simulated incremental revenue: "
     f"₹{mean_revenue:,.2f}"
 )
 

@@ -3,7 +3,7 @@ import joblib
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 
 
 # --------------------------------------------------
@@ -67,10 +67,11 @@ model.fit(X_train, y_train)
 
 predictions = model.predict(X_test)
 
-accuracy = accuracy_score(
-    y_test,
-    predictions
-)
+accuracy = accuracy_score(y_test, predictions)
+precision = precision_score(y_test, predictions, zero_division=0)
+recall = recall_score(y_test, predictions, zero_division=0)
+f1 = f1_score(y_test, predictions, zero_division=0)
+
 
 print("\n===== INTERVENTION MODEL =====")
 
@@ -80,6 +81,18 @@ print(
 
 print(
     f"Accuracy: {accuracy:.2%}"
+)
+
+print(
+    f"Precision: {precision:.2%}"
+)
+
+print(
+    f"Recall: {recall:.2%}"
+)
+
+print(
+    f"F1-score: {f1:.2%}"
 )
 
 

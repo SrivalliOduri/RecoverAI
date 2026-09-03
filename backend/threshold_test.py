@@ -2,7 +2,9 @@ import pandas as pd
 import joblib
 
 data = pd.read_csv("../data/checkout_data.csv")
-model = joblib.load("recovery_model.pkl")
+
+natural_model = joblib.load("recovery_model.pkl")
+treatment_model = joblib.load("treatment_model.pkl")
 
 features = [
     "cart_amount",
@@ -18,10 +20,12 @@ features = [
 
 X = data[features]
 
-natural_probability = model.predict_proba(X)[:, 1]
+natural_probability = natural_model.predict_proba(X)[:, 1]
+
+intervention_probability = treatment_model.predict_proba(X)[:, 1]
 
 expected_uplift = (
-    data["intervention_probability"] - natural_probability
+    intervention_probability - natural_probability
 )
 
 expected_incremental_revenue = (
@@ -39,9 +43,11 @@ for threshold in [500, 1000, 2000, 3000, 4000, 5000]:
     expected_revenue = expected_incremental_revenue[mask].sum()
 
     simulated_incremental_revenue = (
-        data.loc[mask, "intervention_recovered"] * data.loc[mask, "cart_amount"]
+        data.loc[mask, "intervention_recovered"]
+        * data.loc[mask, "cart_amount"]
     ).sum() - (
-        data.loc[mask, "natural_recovered"] * data.loc[mask, "cart_amount"]
+        data.loc[mask, "natural_recovered"]
+        * data.loc[mask, "cart_amount"]
     ).sum()
 
     print(
