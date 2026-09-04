@@ -13,6 +13,7 @@ Previous recoveries
 Purchase frequency
 Cart-to-average-order ratio
 Minutes since abandonment
+
 2. Intervention Model
 
 A second Random Forest model estimates recovery probability under intervention.
